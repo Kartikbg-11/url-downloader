@@ -1,0 +1,1 @@
+{"name": "url-downloader-backend", "version": "1.0.0", "description": "FastAPI backend for URL Application Downloader", "main": "app/main.py", "scripts": {"dev": "uvicorn app.main:app --reload --host 0.0.0.0 --port 8000", "start": "uvicorn app.main:app --host 0.0.0.0 --port 8000", "test": "pytest -v"}, "dependencies": {}, "devDependencies": {}}

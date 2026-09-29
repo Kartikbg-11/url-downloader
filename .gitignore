@@ -1,0 +1,31 @@
+# Dependencies and virtual environments
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Build output
+.next/
+dist/
+build/
+
+# Runtime output and downloaded media
+downloads/
+*.part
+*.log
+page-output.html
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.vscode/
+
+# Local archives and placeholder repository
+*.zip
+url-downloader/
+
+# OS files
+.DS_Store
+Thumbs.db
