@@ -43,6 +43,8 @@ jobs:
     defaults:
       run:
         working-directory: mini-services/url-downloader-backend
+    env:
+      PYTHONPATH: ${{ github.workspace }}/mini-services/url-downloader-backend
 
     steps:
       - name: Check out repository
