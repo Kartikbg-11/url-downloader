@@ -1,0 +1,177 @@
+{
+  "info": {
+    "_postman_id": "c27c9631-60aa-4af5-9c86-202610060001",
+    "name": "URL Downloader - Feature-by-Feature Live Audit",
+    "description": "Postman/Newman test suite for every URL Downloader API feature. It includes positive, negative, boundary, state, security, SSE, and cleanup checks. Two assertions intentionally expose confirmed defects: media-info SSRF and cancellation terminal-state inconsistency.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "http://127.0.0.1:8001"},
+    {"key": "directFileUrl", "value": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"},
+    {"key": "mediaUrl", "value": "https://youtu.be/RLzC55ai0eo"},
+    {"key": "downloadId", "value": ""},
+    {"key": "cancelId", "value": ""},
+    {"key": "activeDeleteId", "value": ""},
+    {"key": "missingId", "value": "00000000-0000-0000-0000-000000000000"},
+    {"key": "pollCount", "value": "0"}
+  ],
+  "item": [
+    {
+      "name": "01 Service and Documentation",
+      "item": [
+        {
+          "name": "API Information",
+          "request": {"method": "GET", "url": "{{baseUrl}}/"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+            "const b=pm.response.json(); pm.test('Name and version returned', () => { pm.expect(b.name).to.eql('URL Application Downloader'); pm.expect(b.version).to.eql('1.0.0'); });"
+          ]}}]
+        },
+        {
+          "name": "Health Check",
+          "request": {"method": "GET", "url": "{{baseUrl}}/api/health"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+            "pm.test('Service is healthy', () => pm.expect(pm.response.json().status).to.eql('healthy'));"
+          ]}}]
+        },
+        {
+          "name": "OpenAPI Schema",
+          "request": {"method": "GET", "url": "{{baseUrl}}/openapi.json"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+            "const b=pm.response.json(); pm.test('OpenAPI contains all download paths', () => { pm.expect(b.openapi).to.eql('3.1.0'); pm.expect(Object.keys(b.paths)).to.include('/api/downloads/{download_id}/events'); });"
+          ]}}]
+        },
+        {
+          "name": "Swagger UI",
+          "request": {"method": "GET", "url": "{{baseUrl}}/docs"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Swagger UI is available', () => { pm.response.to.have.status(200); pm.expect(pm.response.text()).to.include('swagger-ui'); });"]}}]
+        },
+        {
+          "name": "ReDoc UI",
+          "request": {"method": "GET", "url": "{{baseUrl}}/redoc"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('ReDoc is available', () => { pm.response.to.have.status(200); pm.expect(pm.response.text()).to.include('redoc'); });"]}}]
+        }
+      ]
+    },
+    {
+      "name": "02 Media Inspection",
+      "item": [
+        {
+          "name": "Inspect Public Media Formats",
+          "request": {"method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "body": {"mode":"raw","raw":"{\n  \"url\": \"{{mediaUrl}}\"\n}","options":{"raw":{"language":"json"}}}, "url": "{{baseUrl}}/api/downloads/media-info"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+            "const b=pm.response.json(); pm.test('Metadata and formats returned', () => { pm.expect(b.title).to.be.a('string').and.not.empty; pm.expect(b.formats).to.be.an('array').and.not.empty; });"
+          ]}}]
+        },
+        {
+          "name": "Reject Malformed Media URL",
+          "request": {"method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "body": {"mode":"raw","raw":"{\"url\":\"not-a-url\"}","options":{"raw":{"language":"json"}}}, "url": "{{baseUrl}}/api/downloads/media-info"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('HTTP 400 INVALID_URL', () => { pm.response.to.have.status(400); pm.expect(pm.response.json().detail.error.code).to.eql('INVALID_URL'); });"]}}]
+        },
+        {
+          "name": "Block Loopback Media URL - Security Gate",
+          "request": {"method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "body": {"mode":"raw","raw":"{\"url\":\"http://127.0.0.1:8001/api/health\"}","options":{"raw":{"language":"json"}}}, "url": "{{baseUrl}}/api/downloads/media-info"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('SECURITY: loopback media URL must be rejected', () => pm.expect(pm.response.code).to.be.oneOf([400,403]));"]}}]
+        }
+      ]
+    },
+    {
+      "name": "03 Direct Download Lifecycle",
+      "item": [
+        {
+          "name": "Create Direct PDF Download",
+          "request": {"method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "body": {"mode":"raw","raw":"{\"url\":\"{{directFileUrl}}\"}","options":{"raw":{"language":"json"}}}, "url": "{{baseUrl}}/api/downloads"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('HTTP 202', () => pm.response.to.have.status(202));",
+            "const b=pm.response.json(); pm.collectionVariables.set('downloadId', b.id); pm.collectionVariables.set('pollCount','0');",
+            "pm.test('Queued record returned', () => { pm.expect(b.id).to.be.a('string').and.not.empty; pm.expect(b.status).to.eql('queued'); });"
+          ]}}]
+        },
+        {
+          "name": "Poll Direct Download Status",
+          "event": [
+            {"listen":"prerequest","script":{"type":"text/javascript","exec":["setTimeout(() => {}, 350);"]}},
+            {"listen":"test","script":{"type":"text/javascript","exec":[
+              "pm.test('Status endpoint is HTTP 200', () => pm.response.to.have.status(200));",
+              "const b=pm.response.json(); let n=Number(pm.collectionVariables.get('pollCount')||0)+1; pm.collectionVariables.set('pollCount',String(n));",
+              "if(['queued','validating','downloading'].includes(b.status) && n<20){ pm.execution.setNextRequest('Poll Direct Download Status'); } else { pm.test('Download reached completed', () => pm.expect(b.status).to.eql('completed')); pm.test('Progress is 100%', () => pm.expect(b.progress_percentage).to.eql(100)); }"
+            ]}}
+          ],
+          "request": {"method":"GET","url":"{{baseUrl}}/api/downloads/{{downloadId}}"}
+        },
+        {
+          "name": "Stream Completed Download Events",
+          "request": {"method":"GET","header":[{"key":"Accept","value":"text/event-stream"}],"url":"{{baseUrl}}/api/downloads/{{downloadId}}/events"},
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":[
+            "pm.test('SSE endpoint is HTTP 200', () => pm.response.to.have.status(200));",
+            "pm.test('SSE content type', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('text/event-stream'));",
+            "pm.test('Completed and terminal events returned', () => { pm.expect(pm.response.text()).to.include('completed'); pm.expect(pm.response.text()).to.include('terminal'); });"
+          ]}}]
+        },
+        {
+          "name": "Retrieve Completed File",
+          "request": {"method":"GET","url":"{{baseUrl}}/api/downloads/{{downloadId}}/file"},
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":[
+            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+            "pm.test('Binary attachment headers', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/octet-stream'); pm.expect(pm.response.headers.get('Content-Disposition')).to.include('dummy.pdf'); });",
+            "pm.test('File body is not empty', () => pm.expect(pm.response.size().body).to.be.above(1000));"
+          ]}}]
+        },
+        {
+          "name": "Cancel Completed Download",
+          "request": {"method":"POST","url":"{{baseUrl}}/api/downloads/{{downloadId}}/cancel"},
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('Completed job cannot be cancelled', () => { pm.response.to.have.status(409); pm.expect(pm.response.json().detail.error.code).to.eql('INVALID_DOWNLOAD_STATE'); });"]}}]
+        },
+        {
+          "name": "Delete Completed Download",
+          "request": {"method":"DELETE","url":"{{baseUrl}}/api/downloads/{{downloadId}}"},
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 204', () => pm.response.to.have.status(204));","pm.test('Response body is empty', () => pm.expect(pm.response.text()).to.eql(''));"]}}]
+        },
+        {
+          "name": "Confirm Download Was Deleted",
+          "request": {"method":"GET","url":"{{baseUrl}}/api/downloads/{{downloadId}}"},
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('Deleted job returns 404', () => pm.response.to.have.status(404));"]}}]
+        }
+      ]
+    },
+    {
+      "name": "04 Listing and Validation",
+      "item": [
+        {"name":"List Downloads","request":{"method":"GET","url":"{{baseUrl}}/api/downloads?limit=50&offset=0"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 200 list schema', () => { pm.response.to.have.status(200); const b=pm.response.json(); pm.expect(b.downloads).to.be.an('array'); pm.expect(b.total).to.be.a('number'); });"]}}]},
+        {"name":"Invalid Status Filter","request":{"method":"GET","url":"{{baseUrl}}/api/downloads?status=unknown"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 400 INVALID_STATUS', () => { pm.response.to.have.status(400); pm.expect(pm.response.json().detail.error.code).to.eql('INVALID_STATUS'); });"]}}]},
+        {"name":"Limit Below Minimum","request":{"method":"GET","url":"{{baseUrl}}/api/downloads?limit=0"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 422', () => pm.response.to.have.status(422));"]}}]},
+        {"name":"Limit Above Maximum","request":{"method":"GET","url":"{{baseUrl}}/api/downloads?limit=101"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 422', () => pm.response.to.have.status(422));"]}}]},
+        {"name":"Negative Offset","request":{"method":"GET","url":"{{baseUrl}}/api/downloads?offset=-1"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 422', () => pm.response.to.have.status(422));"]}}]},
+        {"name":"Missing Required URL","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{}","options":{"raw":{"language":"json"}}},"url":"{{baseUrl}}/api/downloads"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 422 VALIDATION_ERROR', () => { pm.response.to.have.status(422); pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'); });"]}}]},
+        {"name":"Reject Extra Body Field","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"url\":\"{{directFileUrl}}\",\"unexpected\":true}","options":{"raw":{"language":"json"}}},"url":"{{baseUrl}}/api/downloads"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 422 extra_forbidden', () => { pm.response.to.have.status(422); pm.expect(pm.response.json().error.details[0].type).to.eql('extra_forbidden'); });"]}}]},
+        {"name":"Reject Invalid Media Type","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"url\":\"{{mediaUrl}}\",\"format_id\":\"18\",\"media_type\":\"text\"}","options":{"raw":{"language":"json"}}},"url":"{{baseUrl}}/api/downloads"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 422 pattern error', () => pm.response.to.have.status(422));"]}}]}
+      ]
+    },
+    {
+      "name": "05 Missing Resource Behavior",
+      "item": [
+        {"name":"Get Missing Download","request":{"method":"GET","url":"{{baseUrl}}/api/downloads/{{missingId}}"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 404', () => pm.response.to.have.status(404));"]}}]},
+        {"name":"Events for Missing Download","request":{"method":"GET","url":"{{baseUrl}}/api/downloads/{{missingId}}/events"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 404', () => pm.response.to.have.status(404));"]}}]},
+        {"name":"File for Missing Download","request":{"method":"GET","url":"{{baseUrl}}/api/downloads/{{missingId}}/file"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 404', () => pm.response.to.have.status(404));"]}}]},
+        {"name":"Cancel Missing Download","request":{"method":"POST","url":"{{baseUrl}}/api/downloads/{{missingId}}/cancel"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 404', () => pm.response.to.have.status(404));"]}}]},
+        {"name":"Delete Missing Download","request":{"method":"DELETE","url":"{{baseUrl}}/api/downloads/{{missingId}}"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 404', () => pm.response.to.have.status(404));"]}}]}
+      ]
+    },
+    {
+      "name": "06 Cancellation and Active-State Guards",
+      "item": [
+        {"name":"Create Job for Cancellation","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"url\":\"https://example.com/file.pdf\"}","options":{"raw":{"language":"json"}}},"url":"{{baseUrl}}/api/downloads"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 202', () => pm.response.to.have.status(202));","pm.collectionVariables.set('cancelId',pm.response.json().id);"]}}]},
+        {"name":"Cancel Active Job","request":{"method":"POST","url":"{{baseUrl}}/api/downloads/{{cancelId}}/cancel"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('Cancellation accepted', () => pm.response.to.have.status(200));"]}}]},
+        {"name":"Verify Cancelled Terminal State","event":[{"listen":"prerequest","script":{"type":"text/javascript","exec":["setTimeout(() => {}, 500);"]}},{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('LIFECYCLE: accepted cancellation ends as cancelled', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('cancelled'); });"]}}],"request":{"method":"GET","url":"{{baseUrl}}/api/downloads/{{cancelId}}"}},
+        {"name":"File for Non-Completed Job","request":{"method":"GET","url":"{{baseUrl}}/api/downloads/{{cancelId}}/file"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 409', () => pm.response.to.have.status(409));"]}}]},
+        {"name":"Delete Cancellation Test Job","request":{"method":"DELETE","url":"{{baseUrl}}/api/downloads/{{cancelId}}"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 204 cleanup', () => pm.response.to.have.status(204));"]}}]},
+        {"name":"Create Active Delete Test Job","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"url\":\"https://example.com/file.pdf\"}","options":{"raw":{"language":"json"}}},"url":"{{baseUrl}}/api/downloads"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 202', () => pm.response.to.have.status(202));","pm.collectionVariables.set('activeDeleteId',pm.response.json().id);"]}}]},
+        {"name":"Reject Delete While Active","request":{"method":"DELETE","url":"{{baseUrl}}/api/downloads/{{activeDeleteId}}"},"event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 409 active-state guard', () => pm.response.to.have.status(409));"]}}]},
+        {"name":"Cleanup Active Delete Test Job","event":[{"listen":"prerequest","script":{"type":"text/javascript","exec":["setTimeout(() => {}, 700);"]}},{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('HTTP 204 cleanup after terminal state', () => pm.response.to.have.status(204));"]}}],"request":{"method":"DELETE","url":"{{baseUrl}}/api/downloads/{{activeDeleteId}}"}}
+      ]
+    }
+  ]
+}

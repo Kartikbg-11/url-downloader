@@ -1,0 +1,275 @@
+{
+  "info": {
+    "_postman_id": "6f0786ba-1634-4d21-9c1d-83c498e49d11",
+    "name": "URL Downloader API",
+    "description": "Postman collection for the URL Downloader FastAPI backend. Start the local backend before sending requests. The media workflow first inspects a public URL, then creates a download with a selected format. Successful create requests automatically save the returned ID in the downloadId collection variable.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8001",
+      "type": "string"
+    },
+    {
+      "key": "mediaUrl",
+      "value": "https://youtu.be/RLzC55ai0eo",
+      "type": "string"
+    },
+    {
+      "key": "directFileUrl",
+      "value": "https://example.com/file.pdf",
+      "type": "string"
+    },
+    {
+      "key": "formatId",
+      "value": "134",
+      "type": "string"
+    },
+    {
+      "key": "mediaType",
+      "value": "video",
+      "type": "string"
+    },
+    {
+      "key": "downloadId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Service",
+      "item": [
+        {
+          "name": "API Information",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/",
+            "description": "Returns the API name, version, documentation URL, and primary endpoints."
+          }
+        },
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Service is healthy', function () {",
+                  "  pm.expect(pm.response.json().status).to.eql('healthy');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health",
+            "description": "Checks whether the backend is running."
+          }
+        },
+        {
+          "name": "OpenAPI Schema",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/openapi.json",
+            "description": "Returns the generated OpenAPI specification."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Media Download Workflow",
+      "item": [
+        {
+          "name": "Inspect Media Formats",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{mediaUrl}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/downloads/media-info",
+            "description": "Reads metadata and available audio/video formats for a public media URL. Copy a format_id from the response into the formatId collection variable when needed."
+          }
+        },
+        {
+          "name": "Start Media Download",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Download was accepted', function () {",
+                  "  pm.response.to.have.status(202);",
+                  "});",
+                  "if (pm.response.code === 202) {",
+                  "  const response = pm.response.json();",
+                  "  pm.collectionVariables.set('downloadId', response.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{mediaUrl}}\",\n  \"format_id\": \"{{formatId}}\",\n  \"media_type\": \"{{mediaType}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/downloads",
+            "description": "Queues a media download using a format returned by Inspect Media Formats. Saves the response ID automatically."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Direct File Workflow",
+      "item": [
+        {
+          "name": "Start Direct File Download",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Download was accepted', function () {",
+                  "  pm.response.to.have.status(202);",
+                  "});",
+                  "if (pm.response.code === 202) {",
+                  "  pm.collectionVariables.set('downloadId', pm.response.json().id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{directFileUrl}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/downloads",
+            "description": "Queues a direct HTTP or HTTPS file download and saves its ID automatically. Replace directFileUrl with a real downloadable file URL before sending."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Download Management",
+      "item": [
+        {
+          "name": "List Downloads",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/downloads?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "downloads"],
+              "query": [
+                {"key": "status", "value": "completed", "disabled": true},
+                {"key": "limit", "value": "50"},
+                {"key": "offset", "value": "0"}
+              ]
+            },
+            "description": "Lists download records. Enable the status parameter to filter by queued, validating, downloading, completed, failed, or cancelled."
+          }
+        },
+        {
+          "name": "Get Download Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/downloads/{{downloadId}}",
+            "description": "Returns progress, speed, status, filename, and any error for the saved download ID."
+          }
+        },
+        {
+          "name": "Stream Progress Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "url": "{{baseUrl}}/api/downloads/{{downloadId}}/events",
+            "description": "Opens a Server-Sent Events stream with live download progress. Stop the Postman request after a terminal event is received."
+          }
+        },
+        {
+          "name": "Cancel Download",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/downloads/{{downloadId}}/cancel",
+            "description": "Cancels an active queued, validating, or downloading job."
+          }
+        },
+        {
+          "name": "Download Completed File",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/downloads/{{downloadId}}/file",
+            "description": "Returns the completed file as application/octet-stream. In Postman, use Send and Download to save the response."
+          }
+        },
+        {
+          "name": "Delete Download",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/downloads/{{downloadId}}",
+            "description": "Deletes a completed, failed, or cancelled record and its stored file. Returns HTTP 204."
+          }
+        }
+      ]
+    }
+  ]
+}
