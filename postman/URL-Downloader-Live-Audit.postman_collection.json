@@ -7,6 +7,8 @@
   },
   "variable": [
     {"key": "baseUrl", "value": "http://127.0.0.1:8001"},
+    {"key": "username", "value": "user1"},
+    {"key": "password", "value": "User1@123"},
     {"key": "directFileUrl", "value": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"},
     {"key": "mediaUrl", "value": "https://youtu.be/RLzC55ai0eo"},
     {"key": "downloadId", "value": ""},
@@ -16,6 +18,47 @@
     {"key": "pollCount", "value": "0"}
   ],
   "item": [
+    {
+      "name": "00 Authentication",
+      "item": [
+        {
+          "name": "Clear Previous Session",
+          "request": {"method": "POST", "url": "{{baseUrl}}/api/auth/logout"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+          ]}}]
+        },
+        {
+          "name": "Reject Unauthenticated Download List",
+          "request": {"method": "GET", "url": "{{baseUrl}}/api/downloads"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('HTTP 401 AUTH_REQUIRED', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().detail.error.code).to.eql('AUTH_REQUIRED'); });"
+          ]}}]
+        },
+        {
+          "name": "Reject Invalid Login",
+          "request": {"method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "body": {"mode":"raw","raw":"{\"username\":\"{{username}}\",\"password\":\"wrong-password\"}","options":{"raw":{"language":"json"}}}, "url": "{{baseUrl}}/api/auth/login"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('HTTP 401 INVALID_CREDENTIALS', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().detail.error.code).to.eql('INVALID_CREDENTIALS'); });"
+          ]}}]
+        },
+        {
+          "name": "Login",
+          "request": {"method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "body": {"mode":"raw","raw":"{\"username\":\"{{username}}\",\"password\":\"{{password}}\"}","options":{"raw":{"language":"json"}}}, "url": "{{baseUrl}}/api/auth/login"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+            "pm.test('Session cookie is HttpOnly', () => pm.expect(pm.response.headers.get('Set-Cookie')).to.include('HttpOnly'));"
+          ]}}]
+        },
+        {
+          "name": "Current User",
+          "request": {"method": "GET", "url": "{{baseUrl}}/api/auth/me"},
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('Logged-in user returned', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().username).to.eql(pm.collectionVariables.get('username')); });"
+          ]}}]
+        }
+      ]
+    },
     {
       "name": "01 Service and Documentation",
       "item": [

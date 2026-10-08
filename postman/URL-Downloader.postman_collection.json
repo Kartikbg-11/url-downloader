@@ -12,6 +12,16 @@
       "type": "string"
     },
     {
+      "key": "username",
+      "value": "user1",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "User1@123",
+      "type": "string"
+    },
+    {
       "key": "mediaUrl",
       "value": "https://youtu.be/RLzC55ai0eo",
       "type": "string"
@@ -38,6 +48,56 @@
     }
   ],
   "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Login succeeds', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Correct user returned', function () { pm.expect(pm.response.json().username).to.eql(pm.collectionVariables.get('username')); });",
+                  "pm.test('HttpOnly session cookie is set', function () { pm.expect(pm.response.headers.get('Set-Cookie')).to.include('HttpOnly'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": "{{baseUrl}}/api/auth/login",
+            "description": "Logs in and stores the HttpOnly session cookie in Postman's cookie jar for later requests."
+          }
+        },
+        {
+          "name": "Current User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test('Session is active', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().username).to.eql(pm.collectionVariables.get('username')); });"],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/me",
+            "description": "Returns the user attached to the current session cookie."
+          }
+        }
+      ]
+    },
     {
       "name": "Service",
       "item": [

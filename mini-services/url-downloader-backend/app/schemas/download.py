@@ -52,6 +52,7 @@ class DownloadResponse(BaseModel):
     """Response schema for download information."""
 
     id: str = Field(..., description="Unique download identifier (UUID)")
+    owner: str = Field(..., description="Username that owns this download")
     url: str = Field(..., description="Original URL requested")
     filename: str = Field(..., description="Sanitized filename")
     status: str = Field(..., description="Current download status")

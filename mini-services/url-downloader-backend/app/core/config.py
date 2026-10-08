@@ -24,6 +24,26 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8000, alias="PORT")
 
+    # Authentication (exactly three local accounts)
+    auth_users: str = Field(
+        default="user1:User1@123,user2:User2@123,user3:User3@123",
+        alias="AUTH_USERS",
+    )
+    auth_session_hours: int = Field(
+        default=8,
+        alias="AUTH_SESSION_HOURS",
+        ge=1,
+        le=168,
+    )
+    auth_cookie_name: str = Field(
+        default="url_downloader_session",
+        alias="AUTH_COOKIE_NAME",
+    )
+    auth_cookie_secure: bool = Field(
+        default=False,
+        alias="AUTH_COOKIE_SECURE",
+    )
+
     # Download settings
     download_directory: str = Field(default="downloads", alias="DOWNLOAD_DIRECTORY")
     max_download_size_bytes: int = Field(
@@ -126,6 +146,25 @@ class Settings(BaseSettings):
     def parsed_cors_origins(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def parsed_auth_users(self) -> dict[str, str]:
+        """Parse and validate the three configured username/password pairs."""
+        users: dict[str, str] = {}
+        for entry in self.auth_users.split(","):
+            username, separator, password = entry.strip().partition(":")
+            if not separator or not username.strip() or not password:
+                raise ValueError(
+                    "AUTH_USERS must contain username:password pairs separated by commas"
+                )
+            username = username.strip()
+            if username in users:
+                raise ValueError("AUTH_USERS usernames must be unique")
+            users[username] = password
+
+        if len(users) != 3:
+            raise ValueError("AUTH_USERS must define exactly three users")
+        return users
 
     @property
     def resolved_download_directory(self) -> Path:

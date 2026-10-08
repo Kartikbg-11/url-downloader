@@ -17,7 +17,7 @@ from fastapi.exceptions import RequestValidationError
 
 from app.core.config import get_settings
 from app.core.exceptions import DownloadError
-from app.api import health, downloads
+from app.api import auth, health, downloads
 
 
 # Configure logging
@@ -159,6 +159,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Register routers
 api_prefix = settings.api_prefix
 app.include_router(health.router, prefix=api_prefix)
+app.include_router(auth.router, prefix=api_prefix)
 app.include_router(downloads.router, prefix=api_prefix)
 
 

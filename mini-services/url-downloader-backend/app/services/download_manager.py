@@ -69,6 +69,7 @@ class DownloadManager:
     async def create_download(
         self,
         url: str,
+        owner: str,
         format_id: Optional[str] = None,
         media_type: Optional[str] = None,
     ) -> DownloadRecord:
@@ -104,6 +105,7 @@ class DownloadManager:
         # Create record in queued state
         record = DownloadRecord(
             id=download_id,
+            owner=owner,
             url=url,
             filename=initial_filename,
             status=DownloadStatus.QUEUED,
@@ -559,7 +561,7 @@ class DownloadManager:
         await self.repository.delete(download_id)
 
         # Create new download with same URL
-        return await self.create_download(record.url)
+        return await self.create_download(record.url, owner=record.owner)
 
     # --- Event subscription methods ---
 

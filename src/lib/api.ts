@@ -12,6 +12,7 @@ import type {
   HealthResponse,
   ApiError,
   MediaInfo,
+  AuthUser,
 } from "@/types/download";
 import { getApiBaseUrl, BACKEND_PORT } from "./config";
 
@@ -94,9 +95,35 @@ export class ApiClientError extends Error {
  * API client object with methods for each endpoint
  */
 export const apiClient = {
+  async login(username: string, password: string): Promise<AuthUser> {
+    const response = await fetch(buildUrl(`/api/auth/login?XTransformPort=${BACKEND_PORT}`), {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    return handleResponse<AuthUser>(response);
+  },
+
+  async me(): Promise<AuthUser> {
+    const response = await fetch(buildUrl(`/api/auth/me?XTransformPort=${BACKEND_PORT}`), {
+      credentials: "include",
+    });
+    return handleResponse<AuthUser>(response);
+  },
+
+  async logout(): Promise<void> {
+    const response = await fetch(buildUrl(`/api/auth/logout?XTransformPort=${BACKEND_PORT}`), {
+      method: "POST",
+      credentials: "include",
+    });
+    return handleResponse<void>(response);
+  },
+
   async getMediaInfo(url: string): Promise<MediaInfo> {
     const response = await fetch(buildUrl(`/api/downloads/media-info?XTransformPort=${BACKEND_PORT}`), {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url }),
     });
@@ -107,7 +134,9 @@ export const apiClient = {
    * Check service health
    */
   async health(): Promise<HealthResponse> {
-    const response = await fetch(buildUrl(`/api/health?XTransformPort=${BACKEND_PORT}`));
+    const response = await fetch(buildUrl(`/api/health?XTransformPort=${BACKEND_PORT}`), {
+      credentials: "include",
+    });
     return handleResponse<HealthResponse>(response);
   },
 
@@ -117,6 +146,7 @@ export const apiClient = {
   async createDownload(request: CreateDownloadRequest): Promise<Download> {
     const response = await fetch(buildUrl(`/api/downloads?XTransformPort=${BACKEND_PORT}`), {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
@@ -128,7 +158,8 @@ export const apiClient = {
    */
   async getDownload(downloadId: string): Promise<Download> {
     const response = await fetch(
-      buildUrl(`/api/downloads/${downloadId}?XTransformPort=${BACKEND_PORT}`)
+      buildUrl(`/api/downloads/${downloadId}?XTransformPort=${BACKEND_PORT}`),
+      { credentials: "include" }
     );
     return handleResponse<Download>(response);
   },
@@ -142,7 +173,8 @@ export const apiClient = {
     offset?: number;
   }): Promise<DownloadsListResponse> {
     const response = await fetch(
-      buildUrl(`/api/downloads?XTransformPort=${BACKEND_PORT}`, params)
+      buildUrl(`/api/downloads?XTransformPort=${BACKEND_PORT}`, params),
+      { credentials: "include" }
     );
     return handleResponse<DownloadsListResponse>(response);
   },
@@ -153,7 +185,7 @@ export const apiClient = {
   async cancelDownload(downloadId: string): Promise<Download> {
     const response = await fetch(
       buildUrl(`/api/downloads/${downloadId}/cancel?XTransformPort=${BACKEND_PORT}`),
-      { method: "POST" }
+      { method: "POST", credentials: "include" }
     );
     return handleResponse<Download>(response);
   },
@@ -164,7 +196,7 @@ export const apiClient = {
   async deleteDownload(downloadId: string): Promise<void> {
     const response = await fetch(
       buildUrl(`/api/downloads/${downloadId}?XTransformPort=${BACKEND_PORT}`),
-      { method: "DELETE" }
+      { method: "DELETE", credentials: "include" }
     );
     return handleResponse<void>(response);
   },
@@ -174,7 +206,8 @@ export const apiClient = {
    */
   async getFile(downloadId: string, filename: string): Promise<Blob> {
     const response = await fetch(
-      buildUrl(`/api/downloads/${downloadId}/file?XTransformPort=${BACKEND_PORT}`)
+      buildUrl(`/api/downloads/${downloadId}/file?XTransformPort=${BACKEND_PORT}`),
+      { credentials: "include" }
     );
 
     if (!response.ok) {

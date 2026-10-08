@@ -14,6 +14,7 @@ export type DownloadStatus =
 /** Download record as returned by the API */
 export interface Download {
   id: string;
+  owner: string;
   url: string;
   filename: string;
   status: DownloadStatus;
@@ -81,4 +82,9 @@ export interface DownloadsListResponse {
 /** Health check response */
 export interface HealthResponse {
   status: string;
+}
+
+/** Authenticated local account */
+export interface AuthUser {
+  username: string;
 }

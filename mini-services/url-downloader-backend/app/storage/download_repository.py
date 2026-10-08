@@ -24,6 +24,7 @@ class DownloadRecord:
     def __init__(
         self,
         id: str,
+        owner: str,
         url: str,
         filename: str,
         status: DownloadStatus = DownloadStatus.QUEUED,
@@ -36,6 +37,7 @@ class DownloadRecord:
         file_path: Optional[str] = None,
     ):
         self.id = id
+        self.owner = owner
         self.url = url
         self.filename = filename
         self.status = status
@@ -53,6 +55,7 @@ class DownloadRecord:
         """Convert to API response dictionary."""
         return {
             "id": self.id,
+            "owner": self.owner,
             "url": self.url,
             "filename": self.filename,
             "status": self.status.value,
@@ -110,6 +113,7 @@ class DownloadRepository:
 
     async def list(
         self,
+        owner: Optional[str] = None,
         status: Optional[DownloadStatus] = None,
         limit: int = 50,
         offset: int = 0,
@@ -118,6 +122,7 @@ class DownloadRepository:
         List download records with optional filtering.
 
         Args:
+            owner: Filter by account owner (optional)
             status: Filter by status (optional)
             limit: Maximum number of results
             offset: Number of results to skip
@@ -127,6 +132,9 @@ class DownloadRepository:
         """
         async with self._lock:
             records = list(self._downloads.values())
+
+            if owner:
+                records = [r for r in records if r.owner == owner]
 
             # Filter by status if specified
             if status:

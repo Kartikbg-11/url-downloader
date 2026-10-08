@@ -9,6 +9,13 @@ const nextConfig: NextConfig = {
     root: process.cwd(),
   },
   outputFileTracingRoot: process.cwd(),
+  experimental: {
+    // Media inspection can take longer than Next's 30-second rewrite proxy
+    // default while yt-dlp resolves formats and JavaScript challenges. Let the
+    // backend return its real response instead of surfacing a proxy-generated
+    // 500 "socket hang up" to the browser.
+    proxyTimeout: 180_000,
+  },
   async rewrites() {
     const backendUrl =
       process.env.DOWNLOADER_BACKEND_URL || "http://127.0.0.1:8001";

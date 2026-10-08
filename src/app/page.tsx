@@ -1,30 +1,41 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Download as DownloadIcon, Shield, AlertCircle, Server, Terminal } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  AlertCircle,
+  Download as DownloadIcon,
+  Loader2,
+  LogOut,
+  Server,
+  Shield,
+  UserRound,
+} from "lucide-react";
 import { DownloadForm } from "@/components/DownloadForm";
 import { DownloadHistory } from "@/components/DownloadHistory";
-import type { Download } from "@/types/download";
+import { LoginForm } from "@/components/LoginForm";
+import type { AuthUser, Download } from "@/types/download";
 import { apiClient, ApiClientError } from "@/lib/api";
 
-/**
- * URL Application Downloader - Main Page
- *
- * Provides a complete interface for downloading files from authorized
- * direct-download URLs with real-time progress tracking.
- */
 export default function HomePage() {
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [downloads, setDownloads] = useState<Download[]>([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null);
   const [notification, setNotification] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
 
-  /**
-   * Check if backend is available
-   */
+  const showNotification = useCallback(
+    (type: "success" | "error", message: string) => {
+      setNotification({ type, message });
+      window.setTimeout(() => setNotification(null), 5000);
+    },
+    []
+  );
+
   const checkBackendHealth = useCallback(async () => {
     try {
       await apiClient.health();
@@ -37,124 +48,184 @@ export default function HomePage() {
     }
   }, []);
 
-  /**
-   * Load download history on mount and after new downloads
-   */
   const loadDownloads = useCallback(async () => {
     setIsLoadingHistory(true);
-    
-    // First check if backend is available
-    const isHealthy = await checkBackendHealth();
-    if (!isHealthy) {
-      setIsLoadingHistory(false);
-      return;
-    }
-
     try {
       const response = await apiClient.listDownloads({ limit: 50 });
       setDownloads(response.downloads);
     } catch (err) {
-      console.error("Failed to load downloads:", err);
+      if (err instanceof ApiClientError && err.status === 401) {
+        setCurrentUser(null);
+        setDownloads([]);
+      } else {
+        console.error("Failed to load downloads:", err);
+        showNotification("error", "Could not load download history.");
+      }
     } finally {
       setIsLoadingHistory(false);
     }
-  }, [checkBackendHealth]);
+  }, [showNotification]);
 
-  // Initial load
+  const initialize = useCallback(async () => {
+    setIsCheckingAuth(true);
+    const isHealthy = await checkBackendHealth();
+    if (!isHealthy) {
+      setCurrentUser(null);
+      setIsCheckingAuth(false);
+      return;
+    }
+
+    try {
+      const user = await apiClient.me();
+      setCurrentUser(user);
+      await loadDownloads();
+    } catch (err) {
+      if (!(err instanceof ApiClientError && err.status === 401)) {
+        console.error("Session check failed:", err);
+      }
+      setCurrentUser(null);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  }, [checkBackendHealth, loadDownloads]);
+
   useEffect(() => {
-    loadDownloads();
-  }, [loadDownloads]);
+    initialize();
+  }, [initialize]);
 
-  /**
-   * Handle successful download creation
-   */
-  const handleDownloadCreated = useCallback((downloadId: string) => {
+  const handleLogin = useCallback(
+    (user: AuthUser) => {
+      setCurrentUser(user);
+      showNotification("success", `Signed in as ${user.username}.`);
+      loadDownloads();
+    },
+    [loadDownloads, showNotification]
+  );
+
+  const handleLogout = useCallback(async () => {
+    setIsLoggingOut(true);
+    try {
+      await apiClient.logout();
+    } catch (err) {
+      console.error("Logout request failed:", err);
+    } finally {
+      setCurrentUser(null);
+      setDownloads([]);
+      setNotification(null);
+      setIsLoggingOut(false);
+    }
+  }, []);
+
+  const handleDownloadCreated = useCallback(() => {
     showNotification("success", "Download started! Check progress below.");
     loadDownloads();
-  }, [loadDownloads]);
+  }, [loadDownloads, showNotification]);
 
-  /**
-   * Handle download creation error
-   */
-  const handleDownloadError = useCallback((error: string) => {
-    showNotification("error", error);
-  }, []);
-
-  /**
-   * Handle download removal
-   */
-  const handleRemove = useCallback((downloadId: string) => {
-    setDownloads((prev) => prev.filter((d) => d.id !== downloadId));
-  }, []);
-
-  /**
-   * Handle retry request
-   */
-  const handleRetry = useCallback(async (url: string) => {
-    try {
-      const response = await apiClient.createDownload({ url });
-      showNotification("success", "Retry started!");
-      loadDownloads();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to start retry";
-      showNotification("error", message);
-    }
-  }, [loadDownloads]);
-
-  /**
-   * Show a temporary notification
-   */
-  const showNotification = useCallback(
-    (type: "success" | "error", message: string) => {
-      setNotification({ type, message });
-      setTimeout(() => setNotification(null), 5000);
-    },
-    []
+  const handleDownloadError = useCallback(
+    (error: string) => showNotification("error", error),
+    [showNotification]
   );
+
+  const handleRemove = useCallback((downloadId: string) => {
+    setDownloads((previous) => previous.filter((download) => download.id !== downloadId));
+  }, []);
+
+  const handleRetry = useCallback(
+    async (url: string) => {
+      try {
+        await apiClient.createDownload({ url });
+        showNotification("success", "Retry started!");
+        loadDownloads();
+      } catch (err) {
+        showNotification(
+          "error",
+          err instanceof Error ? err.message : "Failed to start retry"
+        );
+      }
+    },
+    [loadDownloads, showNotification]
+  );
+
+  if (isCheckingAuth) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+        <div className="text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-400" />
+          <p className="mt-4 text-sm text-slate-300">Checking your session...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <LoginForm
+        backendAvailable={backendAvailable}
+        onLogin={handleLogin}
+        onRetryConnection={initialize}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-600 text-white">
+      <header className="border-b border-gray-200 bg-white">
+        <div className="mx-auto flex max-w-4xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white">
               <DownloadIcon className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">
-                URL Application Downloader
-              </h1>
-              <p className="text-sm text-gray-500">
-                Download authorized public video or audio
-              </p>
+              <h1 className="text-xl font-bold text-gray-900">URL Application Downloader</h1>
+              <p className="text-sm text-gray-500">Your private download workspace</p>
             </div>
           </div>
-          {backendAvailable === false && (
-            <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
+              <UserRound className="h-4 w-4" />
+              <span className="font-semibold">{currentUser.username}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              {isLoggingOut ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogOut className="h-4 w-4" />
+              )}
+              Log out
+            </button>
+          </div>
+        </div>
+
+        {backendAvailable === false && (
+          <div className="mx-auto max-w-4xl px-4 pb-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
               <Server className="h-4 w-4 flex-shrink-0" />
               <span>Backend server is not running. Some features may be unavailable.</span>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </header>
 
-      {/* Main content */}
-      <main className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        {/* Notification */}
+      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         {notification && (
           <div
-            className={`mb-6 flex items-start gap-3 p-4 rounded-lg ${
+            className={`mb-6 flex items-start gap-3 rounded-lg border p-4 ${
               notification.type === "success"
-                ? "bg-green-50 text-green-800 border border-green-200"
-                : "bg-red-50 text-red-800 border border-red-200"
+                ? "border-green-200 bg-green-50 text-green-800"
+                : "border-red-200 bg-red-50 text-red-800"
             }`}
             role="alert"
           >
             {notification.type === "success" ? (
-              <DownloadIcon className="h-5 w-5 mt-0.5 flex-shrink-0" />
+              <DownloadIcon className="mt-0.5 h-5 w-5 flex-shrink-0" />
             ) : (
-              <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+              <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
             )}
             <div className="flex-1">
               <p className="font-medium">
@@ -163,64 +234,32 @@ export default function HomePage() {
               <p className="text-sm opacity-90">{notification.message}</p>
             </div>
             <button
+              type="button"
               onClick={() => setNotification(null)}
-              className="p-1 hover:opacity-70 transition-opacity"
+              className="p-1 transition-opacity hover:opacity-70"
               aria-label="Dismiss notification"
             >
-              ✕
+              ×
             </button>
           </div>
         )}
 
-        {/* Backend Unavailable Notice */}
-        {backendAvailable === false && (
-          <div className="mb-8 p-6 bg-orange-50 border border-orange-200 rounded-xl">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="h-6 w-6 text-orange-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <h2 className="font-semibold text-orange-900 mb-2">Backend Server Required</h2>
-                <p className="text-sm text-orange-800 mb-4">
-                  The FastAPI backend is not running. To enable full functionality, start the backend server:
-                </p>
-                <div className="bg-orange-100 rounded-lg p-4 font-mono text-xs overflow-x-auto">
-                  <pre className="text-orange-900">{`# Start the backend server:
-cd mini-services/url-downloader-backend
-source venv/bin/activate
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-
-# Or use Docker:
-docker compose up backend`}</pre>
-                </div>
-                <button
-                  onClick={loadDownloads}
-                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
-                >
-                  <Terminal className="h-4 w-4" />
-                  Retry Connection
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Download form card */}
-        <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+        <section className="mb-8 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <DownloadForm
             onSubmitSuccess={handleDownloadCreated}
             onSubmitError={handleDownloadError}
             disabled={backendAvailable === false}
           />
 
-          {/* Security notice */}
-          <div className="mt-6 pt-5 border-t border-gray-100">
-            <div className="flex gap-3 p-3 bg-blue-50 rounded-lg">
-              <Shield className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div className="mt-6 border-t border-gray-100 pt-5">
+            <div className="flex gap-3 rounded-lg bg-blue-50 p-3">
+              <Shield className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
               <div className="text-sm text-blue-800">
-                <p className="font-medium mb-1">Security Notice</p>
+                <p className="mb-1 font-medium">Security Notice</p>
                 <ul className="space-y-1 text-blue-700/80">
+                  <li>• Your download history is private to this account</li>
                   <li>• Only public media you own or may download is supported</li>
                   <li>• Private network URLs are blocked for security</li>
-                  <li>• All downloads are validated for file type and size</li>
                   <li>• Private, protected, and DRM-restricted media is not supported</li>
                 </ul>
               </div>
@@ -228,7 +267,6 @@ docker compose up backend`}</pre>
           </div>
         </section>
 
-        {/* Download history */}
         <DownloadHistory
           downloads={downloads}
           onRemove={handleRemove}
@@ -237,11 +275,10 @@ docker compose up backend`}</pre>
         />
       </main>
 
-      {/* Footer */}
       <footer className="mt-auto border-t border-gray-200 bg-white">
-        <div className="max-w-4xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
           <p className="text-center text-sm text-gray-500">
-            URL Application Downloader — Secure file downloading with real-time progress
+            URL Application Downloader — Secure downloads with real-time progress
           </p>
         </div>
       </footer>

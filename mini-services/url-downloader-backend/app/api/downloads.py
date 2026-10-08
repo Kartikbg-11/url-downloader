@@ -7,10 +7,11 @@ Provides CRUD operations for downloads and file retrieval.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
 
 from app.core.config import get_settings
+from app.core.auth import AuthUser, get_current_user
 from app.core.exceptions import (
     DownloadError,
     DownloadNotFoundError,
@@ -48,7 +49,10 @@ router = APIRouter(prefix="/downloads", tags=["Downloads"])
     summary="Start Download",
     description="Submit a URL to start a new download. Returns immediately with download ID for progress tracking.",
 )
-async def create_download(request: DownloadCreateRequest) -> dict:
+async def create_download(
+    request: DownloadCreateRequest,
+    current_user: AuthUser = Depends(get_current_user),
+) -> dict:
     """
     Create a new download task.
 
@@ -60,6 +64,7 @@ async def create_download(request: DownloadCreateRequest) -> dict:
     try:
         record = await manager.create_download(
             request.url,
+            current_user.username,
             request.format_id,
             request.media_type,
         )
@@ -75,7 +80,10 @@ async def create_download(request: DownloadCreateRequest) -> dict:
     response_model=MediaInfoResponse,
     summary="Inspect public media formats",
 )
-async def media_info(request: MediaInfoRequest) -> dict:
+async def media_info(
+    request: MediaInfoRequest,
+    current_user: AuthUser = Depends(get_current_user),
+) -> dict:
     from app.services.media_service import get_media_service
     from app.services.url_validator import URLValidator
 
@@ -121,6 +129,7 @@ async def list_downloads(
         ge=0,
         description="Number of results to skip",
     ),
+    current_user: AuthUser = Depends(get_current_user),
 ) -> dict:
     """
     List all downloads.
@@ -146,6 +155,7 @@ async def list_downloads(
             )
 
     records, total = await repository.list(
+        owner=current_user.username,
         status=status_filter,
         limit=limit,
         offset=offset,
@@ -167,7 +177,10 @@ async def list_downloads(
     summary="Get Download Status",
     description="Get detailed status of a specific download by its ID.",
 )
-async def get_download(download_id: str) -> dict:
+async def get_download(
+    download_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+) -> dict:
     """
     Get download details by ID.
 
@@ -176,7 +189,7 @@ async def get_download(download_id: str) -> dict:
     repository = get_repository()
     record = await repository.get(download_id)
 
-    if not record:
+    if not record or record.owner != current_user.username:
         raise HTTPError(status_code=404, detail={
             "error": {
                 "code": "DOWNLOAD_NOT_FOUND",
@@ -214,7 +227,10 @@ async def get_download(download_id: str) -> dict:
         404: {"model": ErrorResponse, "description": "Download not found"},
     },
 )
-async def download_events(download_id: str):
+async def download_events(
+    download_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Server-Sent Events endpoint for real-time progress.
 
@@ -237,7 +253,7 @@ async def download_events(download_id: str):
 
     # Verify download exists
     record = await repository.get(download_id)
-    if not record:
+    if not record or record.owner != current_user.username:
         raise HTTPException(status_code=404, detail={
             "error": {
                 "code": "DOWNLOAD_NOT_FOUND",
@@ -315,7 +331,10 @@ async def download_events(download_id: str):
     summary="Download File",
     description="Retrieve the downloaded file. Only available after download completes successfully.",
 )
-async def get_file(download_id: str):
+async def get_file(
+    download_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Get the downloaded file.
 
@@ -326,7 +345,7 @@ async def get_file(download_id: str):
     file_service = get_file_service()
 
     record = await repository.get(download_id)
-    if not record:
+    if not record or record.owner != current_user.username:
         raise HTTPException(status_code=404, detail={
             "error": {
                 "code": "DOWNLOAD_NOT_FOUND",
@@ -379,7 +398,10 @@ async def get_file(download_id: str):
     summary="Cancel Download",
     description="Cancel an active download. Removes partial files.",
 )
-async def cancel_download(download_id: str) -> dict:
+async def cancel_download(
+    download_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+) -> dict:
     """
     Cancel an active download.
 
@@ -388,6 +410,9 @@ async def cancel_download(download_id: str) -> dict:
     manager = get_download_manager()
 
     try:
+        record = await get_repository().get(download_id)
+        if not record or record.owner != current_user.username:
+            raise DownloadNotFoundError()
         await manager.cancel_download(download_id)
 
         # Return updated record
@@ -415,7 +440,10 @@ async def cancel_download(download_id: str) -> dict:
     summary="Delete Download",
     description="Delete a completed or failed download and remove its file.",
 )
-async def delete_download(download_id: str) -> Response:
+async def delete_download(
+    download_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+) -> Response:
     """
     Delete a download record and its file.
 
@@ -424,6 +452,9 @@ async def delete_download(download_id: str) -> Response:
     manager = get_download_manager()
 
     try:
+        record = await get_repository().get(download_id)
+        if not record or record.owner != current_user.username:
+            raise DownloadNotFoundError()
         await manager.delete_download(download_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
